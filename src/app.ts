@@ -1,6 +1,7 @@
 import Discord from "discord.js";
 import API_TOKEN from "./token";
 
+// @ts-ignore
 if (API_TOKEN === "YOUR.API.TOKEN.HERE") {
 	throw new Error("To use rolebot, you must generate a Discord API token and add it to token.ts");
 }
@@ -8,26 +9,21 @@ if (API_TOKEN === "YOUR.API.TOKEN.HERE") {
 const client = new Discord.Client();
 
 const guildRoles = (guild: Discord.Guild): string[] => {
-	return guild.roles.map((v, k) => k).sort();
+	return guild.roles.map(r => r.name).filter(s => s !== "@everyone");
 };
 
 const findRole = (key: string, guild: Discord.Guild): (Discord.Role | null) => {
-	const res = guild.roles.map((v, k) => k.toLowerCase()).find(s => s === key.toLowerCase());
-	if (res === undefined) {
-		return null;
-	}
-	const q = guild.roles.get(res);
-	if (q === undefined) {
-		throw new Error(`guild.roles.get(${key}) was undefined but was found in map()`);
-	}
-	return q;
+	return guild.roles.find(r => r.name === key);
 };
 
 const commands: { [cmd: string]:
-	(args: string[], user: Discord.GuildMember, guild: Discord.Guild) => (string | null) } = {
+	(args: string[], user: Discord.GuildMember, guild: Discord.Guild) => (string | null | Promise<string | null>) } = {
 	addrole: (args, user, guild) => {
-		const usage = `Usage: !addrole role\nAdds a role to this user.\nList of roles:\n
-		${guildRoles(guild).reduce(s => `\n${s}`)}`;
+		const usage =
+`Usage: !addrole role
+Adds a role to this user.
+List of roles:
+${guildRoles(guild).reduce((a, s) => `${a}\n${s}`)}`;
 
 		if (args.length === 0 || args[0] === "-help") {
 			return usage;
@@ -39,14 +35,22 @@ const commands: { [cmd: string]:
 		if (role === null) {
 			return `Role "${args[0]}" not found.`;
 		}
+		if (user.roles.has(role.id)) {
+			return `You already have role "${args[0]}"`;
+		}
 
-		user.addRole(role);
-		return `Role "${args[0]}" successfully added.`;
+		return new Promise<string | null>(async resolve => {
+			await user.addRole(role).then(res => {
+				resolve(`Role "${args[0]}" successfully added.`);
+			}).catch(res => {
+				resolve(`Role "${args[0]}" was not added (${res}).`);
+			});
+		});
 	},
 
 	help: () => {
-		const list = Object.keys(commands).sort().reduce(s => `\n${s}`);
-		return `List of commands\n${list}\nType "command -help" for usage of any command.`;
+		const list = Object.keys(commands).sort().reduce((a, s) => `${a}\n${s}`);
+		return `List of commands:\n${list}\nType "!*command* -help" for usage of any command.`;
 	},
 
 	ping: args => {
@@ -68,8 +72,11 @@ const commands: { [cmd: string]:
 	},
 
 	rmrole: (args, user, guild) => {
-		const usage = `Usage: !rmrole role\nAdds a role to this user.\nList of roles:\n
-		${guildRoles(guild).reduce(s => `\n${s}`)}`;
+		const usage =
+`Usage: !rmrole role
+Removes a role from this user.
+List of roles:
+${guildRoles(guild).reduce((a, s) => `${a}\n${s}`)}`;
 
 		if (args.length === 0 || args[0] === "-help") {
 			return usage;
@@ -81,34 +88,54 @@ const commands: { [cmd: string]:
 		if (role === null) {
 			return `Role "${args[0]}" not found.`;
 		}
-
-		if (!user.roles.has(role.name)) {
-			return `You do not have the role "${role.name}"`
+		if (!user.roles.has(role.id)) {
+			return `You already lack role "${args[0]}"`;
 		}
-		user.removeRole(role);
-		return `Role "${args[0]}" successfully removed.`;
+
+		return new Promise<string | null>(async resolve => {
+			await user.removeRole(role).then(res => {
+				resolve(`Role "${args[0]}" successfully removed.`);
+			}).catch(res => {
+				resolve(`Role "${args[0]}" was not removed (${res}).`);
+			});
+		});
 	},
 };
 
-const processCmd = (s: string): (string | null) => {
+const processCmd = (s: string, user: Discord.GuildMember, guild: Discord.Guild): Promise<string | null> => {
 	let cmd: string;
 	let args: string[];
 
 	const match = s.match(/([^\s]+)(.+)?/);
 	if (match === null) {
-		return null;
+		return new Promise(resolve => resolve(null));
 	}
 	cmd = match[1];
 	args = match[2] != null ? match[2].trim().split(/\s+/) : [];
 
-	return null;
+	if (commands[cmd] === undefined) {
+		return new Promise(resolve => resolve(`Command "${cmd}" unrecognized.`));
+	}
+	const res = commands[cmd](args, user, guild);
+	if (typeof res === "string" || res === null) {
+		return new Promise(resolve => resolve(res));
+	}
+	return res;
 };
 
-client.on("message", msg => {
+client.on("message", async msg => {
 	const s = msg.content;
 	if (s.substr(0, 1) === "!") {
-		processCmd(s.slice(1));
+		const response = await processCmd(s.slice(1), msg.member, msg.guild);
+		if (response !== null) {
+			msg.channel.send(`${msg.author}\n${response}`);
+		}
 	}
 });
 
+client.on("ready", () => {
+	console.log(`Logged in as ${client.user.tag}`);
+});
+
 client.login(API_TOKEN);
+console.log("rolebot is active");
