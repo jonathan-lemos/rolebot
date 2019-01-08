@@ -1,0 +1,16 @@
+{
+  "name": "rolebot",
+  "version": "1.0.0",
+  "description": "Adds roles to CS2/Comp Structures Discord",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Jonathan Lemos",
+  "license": "MIT",
+  "dependencies": {
+    "@types/node": "^10.12.18",
+    "discord.js": "^11.4.2",
+    "typescript": "^3.2.2"
+  }
+}
